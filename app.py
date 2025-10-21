@@ -15,6 +15,11 @@ app.config['SECRET_KEY'] = 'temp_rainflow_damage_key'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 限制文件大小16MB
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# 添加测试函数
+def test_function():
+    print("This is a test function.")   
+    return "Test function executed."
+
 # 文件类型校验
 def allowed_file(filename):
     return '.' in filename and \
