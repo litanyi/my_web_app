@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Microsoft YaHei", sans-serif; }
+        body { max-width: 1200px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+        .upload-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; color: #34495e; margin-bottom: 5px; }
+        input[type="file"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; max-width: 500px; }
+        button { background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background: #2980b9; }
+        .flash-messages { margin: 20px 0; padding: 10px; border-radius: 4px; }
+        .flash-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .flash-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .flash-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .result-section { margin-top: 30px; }
+        .result-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+        .result-title { font-size: 18px; font-weight: bold; color: #2c3e50; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; color: #34495e; }
+        tr:hover { background: #f8f9fa; }
+        .damage-status { font-size: 18px; font-weight: bold; margin-top: 10px; }
+        .status-danger { color: #e74c3c; }
+        .status-safe { color: #27ae60; }
+        .usage-multiple { font-size: 18px; font-weight: bold; color: #2c3e50; margin-top: 15px; padding: 10px; background: #f1f9ff; border-radius: 4px; }
+        .about-link { display: inline-block; margin-top: 20px; color: #3498db; text-decoration: none; }
+        .about-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>{{ title }}</h1>
+
+    <!-- 消息提示区域（不变） -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                    {% if '错误' in message %}
+                        <div class="flash-error">{{ message }}</div>
+                    {% elif '⚠️' in message %}
+                        <div class="flash-warning">{{ message }}</div>
+                    {% else %}
+                        <div class="flash-success">{{ message }}</div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- 文件上传区域（不变） -->
+    <div class="upload-section">
+        <h2>上传温度-时间Excel文件</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="file">选择Excel文件（.xlsx/.csv）：</label>
+                <input type="file" id="file" name="file" accept=".xlsx, .csv" required>
+                <small style="color: #666; margin-top: 5px; display: block;">
+                    格式要求：第一列为"时间"（数值/日期格式），第二列为"温度"（数值格式），第一行为表头（如"时间(s)"、"温度(℃)"）
+                </small>
+            </div>
+            <button type="submit">上传并计算</button>
+        </form>
+    </div>
+
+    <!-- 结果展示区域（新增使用次数倍数模块） -->
+    {% if result.has_result %}
+        <div class="result-section">
+            <h2>计算结果</h2>
+
+            <!-- 1. 数据范围概览（不变） -->
+            <div class="result-card">
+                <div class="result-title">1. 数据范围概览</div>
+                <p><strong>时间范围：</strong>{{ result.time_range }}</p>
+                <p><strong>温度范围：</strong>{{ result.temp_range }}</p>
+            </div>
+
+            <!-- 2. 雨流计数结果（不变） -->
+            <div class="result-card">
+                <div class="result-title">2. 雨流计数结果（温度循环）</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>温度幅值（℃）</th>
+                            <th>循环次数</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for amp, count in result.rainflow %}
+                            <tr>
+                                <td>{{ amp }}</td>
+                                <td>{{ count }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 3. 损伤度计算结果（新增使用次数倍数展示） -->
+            <div class="result-card">
+                <div class="result-title">3. 损伤度与使用次数分析（Miner线性累积损伤理论）</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>温度幅值（℃）</th>
+                            <th>循环次数</th>
+                            <th>材料疲劳寿命</th>
+                            <th>单次损伤</th>
+                            <th>分段损伤</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for detail in result.damage_details %}
+                            <tr>
+                                <td>{{ detail.amplitude }}</td>
+                                <td>{{ detail.cycle_count }}</td>
+                                <td>{{ detail.fatigue_life }}</td>
+                                <td>{{ detail.single_damage }}</td>
+                                <td>{{ detail.segment_damage }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+                <!-- 总损伤度（不变） -->
+                <div class="damage-status {% if result.total_damage >= 1.0 %}status-danger{% else %}status-safe{% endif %}">
+                    总损伤度：{{ result.total_damage }}
+                </div>
+
+                <!-- 新增：1/损伤度（使用次数倍数） -->
+                <div class="usage-multiple">
+                    1/损伤度（预估使用次数倍数）：{{ result.usage_multiple }}
+                    <br>
+                    <small style="color: #666; font-weight: normal; font-size: 14px; margin-top: 5px; display: block;">
+                        物理意义：在当前温度循环模式下，材料还能承受的“当前损伤量”的倍数（>1表示安全，<1表示已失效，∞表示无损伤）
+                    </small>
+                </div>
+
+                <small style="color: #666; margin-top: 10px; display: block;">
+                    损伤度说明：总损伤度≥1.0表示材料达到疲劳失效阈值；<1.0表示材料安全（数值越小越安全）
+                </small>
+            </div>
+        </div>
+    {% endif %}
+
+    <a href="{{ url_for('about') }}" class="about-link">了解本系统的算法原理</a>
+</body>
+</html>

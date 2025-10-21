@@ -1,0 +1,323 @@
+import numpy as np
+from collections import defaultdict
+
+from flask import Flask, render_template, request, redirect, url_for, flash
+import openpyxl
+from openpyxl.utils.exceptions import InvalidFileException
+import os
+# 用于图形化文件选择框（PC本地选择）
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import pandas as pd
+from openpyxl.utils.dataframe import dataframe_to_rows
+from io import StringIO
+
+# 雨流计数法
+def rainflow_counting(temperature_data):
+    """
+    基于MATLAB三点法思路的雨流计数法（温度循环）
+    核心改进：新增序列拼接优化、二次峰谷提纯
+    输入：温度时序数据列表（数值型）
+    输出：字典{温度幅值: 循环次数}（幅值保留2位小数，次数为整数）
+    """
+    # ----------------------
+    # 步骤1：初始数据校验（避免数据量不足）
+    # ----------------------
+    n = len(temperature_data)
+    if n < 3:
+        return {}  # 至少3个数据点才能识别循环
+    # 转换为numpy数组（便于后续计算，兼容原列表输入）
+    temp_data = np.array(temperature_data, dtype=float)
+
+    # ----------------------
+    # 步骤2：第一次峰谷提纯（对应MATLAB三点法步骤一）
+    # 目的：移除非极值点，保留纯峰谷交替序列
+    # ----------------------
+    # 初始化极值点列表（默认保留首尾点）
+    turning_points = [temp_data[0]]
+    # 遍历中间点，判断是否为峰/谷
+    for i in range(1, n - 1):
+        prev_val = temp_data[i - 1]
+        curr_val = temp_data[i]
+        next_val = temp_data[i + 1]
+
+        # 峰点：当前值 > 前后值；谷点：当前值 < 前后值（严格不等，避免平缓段）
+        is_peak = (curr_val > prev_val) and (curr_val > next_val)
+        is_valley = (curr_val < prev_val) and (curr_val < next_val)
+
+        if is_peak or is_valley:
+            turning_points.append(curr_val)
+    # 补充最后一个点（确保序列完整）
+    if turning_points[-1] != temp_data[-1]:
+        turning_points.append(temp_data[-1])
+
+    # 校验第一次提纯后的序列长度（至少2个点才继续，否则无循环）
+    if len(turning_points) < 2:
+        return {}
+
+    # ----------------------
+    # 步骤3：序列拼接优化（对应MATLAB三点法步骤二）
+    # 目的：从最值（绝对值最大的峰/谷）拆分拼接，确保首尾均为极值
+    # ----------------------
+    # 找到绝对值最大的极值点（优先用最大绝对值，而非单纯最大值，更符合MATLAB思路）
+    abs_turning = np.abs(turning_points)
+    max_abs_idx = np.argmax(abs_turning)  # 绝对值最大点的索引
+    # 拆分序列：从最值点拆分为前后两段，再拼接（前半段+后半段）
+    B1 = turning_points[max_abs_idx:]  # 最值点到序列末尾
+    B2 = turning_points[:max_abs_idx + 1]  # 序列开头到最值点（包含最值点）
+    optimized_points = B1 + B2  # 新序列：从最值开始，到最值结束
+
+    # ----------------------
+    # 步骤4：第二次峰谷提纯（对应MATLAB三点法步骤三）
+    # 目的：消除拼接处可能产生的非极值点，确保序列纯峰谷交替
+    # ----------------------
+    final_turning = [optimized_points[0]]  # 初始化最终极值点列表
+    m = len(optimized_points)
+    # 遍历拼接后的中间点，二次校验峰谷
+    for i in range(1, m - 1):
+        prev_val = optimized_points[i - 1]
+        curr_val = optimized_points[i]
+        next_val = optimized_points[i + 1]
+
+        is_peak = (curr_val > prev_val) and (curr_val > next_val)
+        is_valley = (curr_val < prev_val) and (curr_val < next_val)
+
+        if is_peak or is_valley:
+            final_turning.append(curr_val)
+    # 补充最后一个点
+    if final_turning[-1] != optimized_points[-1]:
+        final_turning.append(optimized_points[-1])
+
+    # 最终极值点序列长度校验（至少3个点才进行计数，否则无完整循环）
+    if len(final_turning) < 3:
+        return {}
+
+    # ----------------------
+    # 步骤5：雨流计数核心逻辑（循环识别规则）
+    # ----------------------
+    rainflow_results = defaultdict(int)
+    stack = []
+
+    for temp in final_turning:
+        stack.append(temp)
+        # 当栈内至少3个点时，判断是否形成完整循环（峰-谷-峰/谷-峰-谷）
+        while len(stack) >= 3:
+            a = stack[-3]  # 倒数第3个点（A）
+            b = stack[-2]  # 倒数第2个点（B）
+            c = stack[-1]  # 倒数第1个点（C）
+
+            # 计算AB段和BC段的幅值
+            amp_ab = abs(b - a)
+            amp_bc = abs(c - b)
+
+            # 雨流规则：BC段幅值 ≤ AB段幅值，形成完整半循环
+            if amp_bc <= amp_ab:
+                cycle_amp = round(amp_bc, 2)  # 循环幅值（保留2位小数）
+                rainflow_results[cycle_amp] += 0.5  # 半循环计数（2个半循环=1个全循环）
+                stack.pop(-2)  # 移除B点，继续判断剩余栈
+            else:
+                break  # 不满足规则，退出当前循环判断
+
+    # ----------------------
+    # 步骤6：处理剩余半循环（对应MATLAB中"余项"处理）
+    # ----------------------
+    while len(stack) >= 2:
+        # 剩余栈中最大可能幅值（首尾点之间的幅值）
+        amp = round(abs(stack[-1] - stack[0]), 2)
+        rainflow_results[amp] += 0.5
+        stack.pop(0)  # 移除首点，继续处理剩余点
+
+    # ----------------------
+    # 步骤7：结果整理（半循环合并为全循环，保留正整数次数）
+    # ----------------------
+    final_results = {}
+    for amp, count in rainflow_results.items():
+        total_count = round(count)  # 四舍五入为整数（0.5→1，1.5→2，确保次数合理）
+        if total_count > 0:  # 只保留有实际循环次数的幅值
+            final_results[amp] = total_count
+
+    # 校验最终结果（无有效循环则抛错）
+    if not final_results:
+        raise ValueError("雨流计数未检测到有效温度循环，可能数据无明显波动")
+
+    return final_results
+
+# ----------------------
+# 关键修改：损伤度计算函数（新增使用次数倍数计算）
+# ----------------------
+def calculate_damage(rainflow_results, material_params=None):
+    """
+    损伤度计算（新增1/损伤度：预估剩余使用次数倍数）
+    返回：total_damage（总损伤度）、damage_details（分段详情）、usage_multiple（使用次数倍数）
+    """
+    # 默认材料参数（通用金属材料）
+    if material_params is None:
+        material_params = {
+            5.0: 100000,  # 幅值5℃：寿命10万次
+            10.0: 50000,  # 幅值10℃：寿命5万次
+            15.0: 20000,  # 幅值15℃：寿命2万次
+            20.0: 10000,  # 幅值20℃：寿命1万次
+            25.0: 5000,  # 幅值25℃：寿命5千次
+            30.0: 2000,  # 幅值30℃：寿命2千次
+            35.0: 1000,  # 幅值35℃：寿命1千次
+            40.0: 500  # 幅值40℃：寿命5百次
+        }
+
+    total_damage = 0.0
+    damage_details = []
+
+    # 计算分段损伤与总损伤
+    for amp, cycle_count in sorted(rainflow_results.items()):
+        # 材料参数插值
+        K1 = 7.61e11
+        alpha = 1
+        beta1 = 3.5252
+        if amp == 0:
+            fatigue_life = K1 * pow((alpha / (amp + 1e-10)), beta1)
+            print(f"警告：amp为{amp}，alpha值为{alpha},cycle_count值为{cycle_count}")
+        else:
+            #fatigue_life = K1 * pow((alpha / amp), beta1)
+            fatigue_life = K1*pow((alpha/amp),beta1)
+
+        # 分段损伤计算
+        single_damage = 1.0 / fatigue_life
+        segment_damage = cycle_count * single_damage
+        total_damage += segment_damage
+
+        damage_details.append({
+            "amplitude": round(amp, 2),
+            "cycle_count": cycle_count,
+            "fatigue_life": round(fatigue_life, 0),
+            "single_damage": round(single_damage, 6),
+            "segment_damage": round(segment_damage, 6)
+        })
+
+    total_damage = round(total_damage, 6)
+
+    # ----------------------
+    # 新增：计算1/损伤度（使用次数倍数）
+    # 物理意义：材料在当前温度循环模式下，预估还能承受的“当前损伤量”的倍数
+    # ----------------------
+    if total_damage == 0:
+        usage_multiple = float('inf')  # 损伤度为0时，理论上可无限使用
+    elif total_damage >= 1.0:
+        usage_multiple = round(1 / total_damage, 4)  # 已失效时，输出剩余倍数（<1）
+    else:
+        usage_multiple = round(1 / total_damage, 4)  # 安全状态时，输出可承受倍数（>1）
+
+    return total_damage, damage_details, usage_multiple
+
+# 温度-时间数据解析（不变）
+def parse_temperature_data(sheet):
+    time_data = []
+    temp_data = []
+
+    for row in sheet.iter_rows(min_row=2, min_col=1, max_col=2, values_only=True):
+        time_val, temp_val = row
+        if time_val is None or temp_val is None:
+            continue
+
+        # 时间格式处理
+        try:
+            if isinstance(time_val, (int, float)):
+                time_data.append(float(time_val))
+            else:
+                time_data.append(float(time_val.toordinal()))
+        except (ValueError, TypeError):
+            flash(f"忽略无效时间数据: {time_val}（第{len(time_data)+2}行）")
+            continue
+
+        # 温度格式处理
+        try:
+            temp_data.append(float(temp_val))
+        except (ValueError, TypeError):
+            flash(f"忽略无效温度数据: {temp_val}（第{len(temp_data)+2}行）")
+            time_data.pop()
+            continue
+
+    # 数据长度对齐与排序
+    if len(time_data) != len(temp_data):
+        flash("时间与温度数据长度不匹配，已自动修正")
+        min_len = min(len(time_data), len(temp_data))
+        time_data = time_data[:min_len]
+        temp_data = temp_data[:min_len]
+
+    sorted_indices = np.argsort(time_data)
+    sorted_time = [time_data[i] for i in sorted_indices]
+    sorted_temp = [temp_data[i] for i in sorted_indices]
+
+    # 数据量校验
+    if len(sorted_temp) < 3:
+        raise ValueError(f"有效数据仅{len(sorted_temp)}个，无法进行雨流计数（需至少3个数据点）")
+
+    return sorted_time, sorted_temp
+
+def read_temperature_file(file,filename):
+    """
+    根据文件后缀自动选择读取方式，解析温度-时间数据
+    输入：file_path（本地文件路径）
+    """
+    # 步骤1：获取文件后缀，判断文件类型
+    print('file:',file)
+    #file_name = file_path.file_name
+    #file_ext = file_name.rsplit('.', 1)[1].lower()  # 提取后缀（小写）
+    file_ext = filename.rsplit('.', 1)[1].lower()
+    print('filename,file_ext:',filename,file_ext)
+
+    if file_ext == 'csv':
+        # 情况2：CSV文件 → 读取CSV数据，写入临时Excel，返回临时Sheet
+        try:
+            # 1. 用pandas读取CSV（处理编码、空行）
+            # 读取文件内容并转换为字符串流
+            from io import StringIO, BytesIO
+
+            # 读取文件原始字节内容
+            file_content = file.read()  # 不直接解码，先获取字节
+
+            # 尝试多种编码格式
+            encodings = ['utf-8', 'gbk', 'gb2312', 'ansi', 'latin-1']
+            csv_data = None
+
+            for encoding in encodings:
+                try:
+                    # 尝试用当前编码解码
+                    content_str = file_content.decode(encoding)
+                    csv_data = StringIO(content_str)
+                    print(f"成功使用{encoding}编码解析文件")
+                    break
+                except UnicodeDecodeError:
+                    continue
+
+            if csv_data is None:
+                raise RuntimeError("无法解析文件编码，请确认文件格式是否正确")
+
+            # 用pandas读取CSV数据
+            df = pd.read_csv(
+                csv_data,
+                encoding_errors='ignore',
+                skip_blank_lines=True
+            )
+            print(f"成功读取CSV文件：{filename}，数据行数：{len(df)}")
+
+            # 2. 创建临时Excel工作簿（in_memory=True：内存中创建，无物理文件残留）
+            wb_temp = openpyxl.Workbook()
+            sheet_temp = wb_temp.active  # 临时Sheet（默认名称Sheet）
+            sheet_temp.title = "CSV_Data"  # 重命名临时Sheet，便于识别
+            # 3. 将CSV数据写入临时Sheet（保留表头，按行写入）
+            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+                # r_idx：Excel行号（从1开始）；row：CSV的一行数据
+                for c_idx, value in enumerate(row, 1):
+                    # c_idx：Excel列号（从1开始）；value：单元格值
+                    sheet_temp.cell(row=r_idx, column=c_idx, value=value)
+
+            print(f"CSV数据已写入临时Sheet：{sheet_temp.title}，表头行：{list(df.columns)}")
+            sheet = sheet_temp
+        except Exception as e:
+            raise RuntimeError(f"CSV文件转换为Sheet失败：{str(e)}")
+    elif file_ext == 'xlsx':
+        wb = openpyxl.load_workbook(file, data_only=True)
+        sheet = wb.active
+    else:
+        print('Unknown File Type')
+        sheet = []
+    return sheet
