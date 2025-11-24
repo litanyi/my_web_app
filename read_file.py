@@ -56,7 +56,6 @@ def read_temperature_file_v1(file_path):
         sheet = []
     return sheet
 
-# ...existing code...
 
 if 1:
     # 步骤1：选择本地Excel文件（已移除 GUI 文件选择，直接使用测试路径或替换为你的路径）

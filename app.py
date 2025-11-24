@@ -25,7 +25,6 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
-
 # ----------------------
 # 关键修改：首页路由（传递使用次数倍数到前端）
 # ----------------------
@@ -77,14 +76,15 @@ def index():
                 result_data["temp_range"] = f"{temp_min} ~ {temp_max} ℃"
 
                 # 雨流计数
-                rainflow_results = rainflow_counting(sorted_temp)
+                rainflow_results = rainflow_counting(sorted_temp,plot_flag=False)
                 sorted_rainflow = sorted(rainflow_results.items(), key=lambda x: x[0])
                 result_data["rainflow"] = sorted_rainflow
                 flash(f'雨流计数完成：检测到 {len(sorted_rainflow)} 种温度循环幅值')
 
                 # 损伤度计算（新增接收usage_multiple）
                 total_damage, damage_details, usage_multiple = calculate_damage(rainflow_results)
-                usage_multiple = int(usage_multiple)  # 使用次数变量值取整数
+                #print(f"usage_multiple before int: {usage_multiple}")
+                #usage_multiple = int(usage_multiple)  # 使用次数变量值取整数
                 result_data["total_damage"] = total_damage
                 result_data["damage_details"] = damage_details
                 result_data["usage_multiple"] = usage_multiple  # 传递到前端

@@ -100,39 +100,44 @@ def rainflow_counting(temperature_data, plot_flag=False):
     # 步骤5：雨流计数核心逻辑（循环识别规则）
     # ----------------------
     rainflow_results = defaultdict(int)
-    stack = []
+    # 复制输入数据，避免修改原数据（对应MATLAB的Load1=Load）
+    Load1 = np.array(final_turning).copy().reshape(-1, 1)  # 转为列向量形式
+    Amplitude = []  # 存储循环幅值
+    Mean = []       # 存储循环均值
+    while len(Load1) >= 1:
+        n1 = len(Load1)
+        # 若剩余数据1个或2个，无法形成循环，退出计数
+        if n1 == 1 or n1 == 2:
+            break
+        # 遍历查找可计数的循环
+        for j in range(n1 - 2):  # Python索引从0开始，对应MATLAB j=1:n1-2
+            # 计算相邻两点的幅值（对应MATLAB s1、s2）
+            s1 = abs(Load1[j+1] - Load1[j])
+            s2 = abs(Load1[j+1] - Load1[j+2])
+            # 计算均值（对应MATLAB e3）
+            e3 = (Load1[j+1] + Load1[j+2]) / 2
+            # 若s1 <= s2，满足计数条件
+            if s1 <= s2:
+                rainflow_results[s1[0]] += 1  # 循环计数
+                Amplitude.append(s1[0])  # 存入幅值（取标量避免维度问题）
+                Mean.append(e3[0])       # 存入均值
+                # 删除Load1中第j和j+1个元素（对应MATLAB Load1(j)=[]; Load1(j)=[]）
+                # Python中删除后索引会自动前移，一次删除两个元素
+                Load1 = np.delete(Load1, [j], axis=0)  # 两次删除j索引（因删除第一个后j+1变为j）
+                Load1 = np.delete(Load1, [j], axis=0)  # 两次删除j索引（因删除第一个后j+1变为j）
+                print(f"计数幅值: {s1[0]}, 剩余数据: {Load1.flatten().tolist()}")
+                break  # 计数一次后跳出内层循环，重新开始外层循环
+        else:
+            # 若遍历完未找到可计数循环，退出
+            break
 
-    for temp in final_turning:
-        stack.append(temp)
-        # 当栈内至少3个点时，判断是否形成完整循环（峰-谷-峰/谷-峰-谷）
-        while len(stack) >= 3:
-            a = stack[-3]  # 倒数第3个点（A）
-            b = stack[-2]  # 倒数第2个点（B）
-            c = stack[-1]  # 倒数第1个点（C）
-
-            # 计算AB段和BC段的幅值
-            amp_ab = abs(b - a)
-            amp_bc = abs(c - b)
-
-            # 雨流规则：BC段幅值 ≤ AB段幅值，形成完整半循环
-            if amp_bc <= amp_ab:
-                cycle_amp = round(amp_bc, 2)  # 循环幅值（保留2位小数）
-                rainflow_results[cycle_amp] += 0.5  # 半循环计数（2个半循环=1个全循环）
-                stack.pop(-2)  # 移除B点，继续判断剩余栈
-            else:
-                break  # 不满足规则，退出当前循环判断
+    D1 = Load1.flatten().tolist()  # 残余数据（转为列表更易使用）
+    # 转为numpy数组（可选，方便后续处理）
+    Amplitude = np.array(Amplitude)
+    Mean = np.array(Mean)
 
     # ----------------------
-    # 步骤6：处理剩余半循环（对应MATLAB中"余项"处理）
-    # ----------------------
-    while len(stack) >= 2:
-        # 剩余栈中最大可能幅值（首尾点之间的幅值）
-        amp = round(abs(stack[-1] - stack[0]), 2)
-        rainflow_results[amp] += 0.5
-        stack.pop(0)  # 移除首点，继续处理剩余点
-
-    # ----------------------
-    # 步骤7：结果整理（半循环合并为全循环，保留正整数次数）
+    # 步骤7：结果整理
     # ----------------------
     final_results = {}
     for amp, count in rainflow_results.items():
@@ -228,17 +233,18 @@ def calculate_damage(rainflow_results, material_params=None):
 
     # 计算分段损伤与总损伤
     for amp, cycle_count in sorted(rainflow_results.items()):
+        
         # 材料参数插值
         K1 = 7.61e11
         alpha = 1
         beta1 = 3.5252
         if amp == 0:
             fatigue_life = K1 * pow((alpha / (amp + 1e-10)), beta1)
-            print(f"警告：amp为{amp}，alpha值为{alpha},cycle_count值为{cycle_count}")
+            print(f"警告：amp为{amp}，alpha值为{alpha},cycle_count值为{cycle_count},fatigue_life值为{fatigue_life}")
         else:
             #fatigue_life = K1 * pow((alpha / amp), beta1)
             fatigue_life = K1*pow((alpha/amp),beta1)
-
+        print(f"读取数据 {amp} ℃ : {cycle_count} 次 : 疲劳寿命 {fatigue_life} 次")
         # 分段损伤计算
         single_damage = 1.0 / fatigue_life
         segment_damage = cycle_count * single_damage
@@ -252,18 +258,18 @@ def calculate_damage(rainflow_results, material_params=None):
             "segment_damage": round(segment_damage, 6)
         })
 
-    total_damage = round(total_damage, 6)
+    total_damage = round(total_damage, 16)
 
     # ----------------------
     # 新增：计算1/损伤度（使用次数倍数）
     # 物理意义：材料在当前温度循环模式下，预估还能承受的“当前损伤量”的倍数
     # ----------------------
     if total_damage == 0:
-        usage_multiple = float('inf')  # 损伤度为0时，理论上可无限使用
+        usage_multiple = int('inf')  # 损伤度为0时，理论上可无限使用
     elif total_damage >= 1.0:
-        usage_multiple = round(1 / total_damage, 4)  # 已失效时，输出剩余倍数（<1）
+        usage_multiple = int(1.0 / total_damage)  # 已失效时，输出剩余倍数（<1）
     else:
-        usage_multiple = round(1 / total_damage, 4)  # 安全状态时，输出可承受倍数（>1）
+        usage_multiple = int(1.0 / total_damage)  # 安全状态时，输出可承受倍数（>1）
 
     return total_damage, damage_details, usage_multiple
 
