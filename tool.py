@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 from collections import defaultdict
 
@@ -11,11 +12,13 @@ from tkinter import filedialog, messagebox
 import pandas as pd
 from openpyxl.utils.dataframe import dataframe_to_rows
 from io import StringIO
+import matplotlib.pyplot as plt
+plt.rcParams["font.family"] = ["SimHei"]  # 配置中文字体
 
 # 雨流计数法
-def rainflow_counting(temperature_data):
+def rainflow_counting(temperature_data, plot_flag=False):
     """
-    基于MATLAB三点法思路的雨流计数法（温度循环）
+    基于三点法思路的雨流计数法（温度循环）
     核心改进：新增序列拼接优化、二次峰谷提纯
     输入：温度时序数据列表（数值型）
     输出：字典{温度幅值: 循环次数}（幅值保留2位小数，次数为整数）
@@ -30,7 +33,7 @@ def rainflow_counting(temperature_data):
     temp_data = np.array(temperature_data, dtype=float)
 
     # ----------------------
-    # 步骤2：第一次峰谷提纯（对应MATLAB三点法步骤一）
+    # 步骤2：第一次峰谷提纯（对应三点法步骤一）
     # 目的：移除非极值点，保留纯峰谷交替序列
     # ----------------------
     # 初始化极值点列表（默认保留首尾点）
@@ -50,6 +53,7 @@ def rainflow_counting(temperature_data):
     # 补充最后一个点（确保序列完整）
     if turning_points[-1] != temp_data[-1]:
         turning_points.append(temp_data[-1])
+
 
     # 校验第一次提纯后的序列长度（至少2个点才继续，否则无循环）
     if len(turning_points) < 2:
@@ -139,6 +143,62 @@ def rainflow_counting(temperature_data):
     # 校验最终结果（无有效循环则抛错）
     if not final_results:
         raise ValueError("雨流计数未检测到有效温度循环，可能数据无明显波动")
+
+    # 可视化各步骤结果（使用指定 figure 编号：Figure 1）
+    if plot_flag:
+        fig1 = plt.figure(num=1, figsize=(12, 8))
+        axes = fig1.subplots(2, 2)
+        ax0, ax1, ax2, ax3 = axes.flatten()
+
+        ax0.plot(temp_data, '-o', markersize=4)
+        ax0.set_title("原始温度序列")
+        ax0.set_xlabel("索引")
+        ax0.set_ylabel("温度(℃)")
+        ax0.grid(True)
+
+        ax1.plot(turning_points, '-o', markersize=4)
+        ax1.set_title("第一次峰谷提纯")
+        ax1.set_xlabel("样本序号")
+        ax1.grid(True)
+
+        ax2.plot(optimized_points, '-o', markersize=4)
+        ax2.set_title("序列拼接优化")
+        ax2.set_xlabel("样本序号")
+        ax2.grid(True)
+
+        ax3.plot(final_turning, '-o', markersize=4)
+        ax3.set_title("第二次峰谷提纯（最终）")
+        ax3.set_xlabel("样本序号")
+        ax3.grid(True)
+
+        fig1.suptitle("步骤可视化", fontsize=12)
+        fig1.tight_layout(rect=[0, 0.03, 1, 0.95])  # 为 suptitle 留出空间
+
+    # 新增：在控制台打印并可视化「幅值 -> 次数」（使用 Figure 2）
+    if plot_flag:
+        # 控制台输出（按幅值排序）
+        print("幅值(℃) -> 循环次数:")
+        for amp, cnt in sorted(final_results.items()):
+            print(f"{amp} ℃ : {cnt} 次")
+
+        # 绘制柱状图显示幅值对应次数并在柱上标注次数（Figure 2）
+        amps = sorted(final_results.keys())
+        counts = [final_results[a] for a in amps]
+
+        fig2 = plt.figure(num=2, figsize=(6, 4))
+        ax2 = fig2.subplots()
+        x_labels = [str(a) for a in amps]
+        bars = ax2.bar(x_labels, counts, color='C2')
+        for rect, v in zip(bars, counts):
+            ax2.text(rect.get_x() + rect.get_width() / 2, v + max(counts) * 0.02, str(v),
+                     ha='center', va='bottom', fontsize=9)
+
+        ax2.set_title("温度幅值 - 循环次数分布")
+        ax2.set_xlabel("幅值 (℃)")
+        ax2.set_ylabel("循环次数")
+        ax2.grid(axis='y', linestyle='--', alpha=0.4)
+        fig2.tight_layout()
+        plt.show()
 
     return final_results
 

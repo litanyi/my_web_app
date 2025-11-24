@@ -60,7 +60,8 @@ def read_temperature_file_v1(file_path):
 
 if 1:
     # 步骤1：选择本地Excel文件（已移除 GUI 文件选择，直接使用测试路径或替换为你的路径）
-    file_path = 'test/2rol_TG600S3-1-City-65.csv'
+    #file_path = 'test/2rol_TG600S3-1-City-65.csv'
+    file_path = 'C:/webframeworks/version_1/models/custom/Temperature.csv'
     # 若需要从命令行或其他方式获取路径，请在此处替换 file_path
 
     # 步骤2：读取并解析Excel文件
@@ -75,7 +76,7 @@ if 1:
         print(f"成功解析 {len(sorted_temp)} 个有效温度-时间数据点")
 
         # 步骤3：雨流计数
-        rainflow_results = rainflow_counting(sorted_temp)
+        rainflow_results = rainflow_counting(sorted_temp,plot_flag=True)
         # 损伤度计算（新增接收usage_multiple）
         total_damage, damage_details, usage_multiple = calculate_damage(rainflow_results)
         usage_multiple = int(usage_multiple)
