@@ -125,7 +125,7 @@ def rainflow_counting(temperature_data, plot_flag=False):
                 # Python中删除后索引会自动前移，一次删除两个元素
                 Load1 = np.delete(Load1, [j], axis=0)  # 两次删除j索引（因删除第一个后j+1变为j）
                 Load1 = np.delete(Load1, [j], axis=0)  # 两次删除j索引（因删除第一个后j+1变为j）
-                print(f"计数幅值: {s1[0]}, 剩余数据: {Load1.flatten().tolist()}")
+                #print(f"计数幅值: {s1[0]}, 剩余数据: {Load1.flatten().tolist()}")
                 break  # 计数一次后跳出内层循环，重新开始外层循环
         else:
             # 若遍历完未找到可计数循环，退出
@@ -244,7 +244,7 @@ def calculate_damage(rainflow_results, material_params=None):
         else:
             #fatigue_life = K1 * pow((alpha / amp), beta1)
             fatigue_life = K1*pow((alpha/amp),beta1)
-        print(f"读取数据 {amp} ℃ : {cycle_count} 次 : 疲劳寿命 {fatigue_life} 次")
+        #print(f"读取数据 {amp} ℃ : {cycle_count} 次 : 疲劳寿命 {fatigue_life} 次")
         # 分段损伤计算
         single_damage = 1.0 / fatigue_life
         segment_damage = cycle_count * single_damage
