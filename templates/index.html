@@ -35,6 +35,8 @@
 <body>
     <h1>{{ title }}</h1>
 
+    <a href="{{ url_for('predict_temperature') }}" class="temperature-link">温度预测</a>
+
     <!-- 消息提示区域（不变） -->
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}

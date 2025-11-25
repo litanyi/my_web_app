@@ -258,7 +258,7 @@ def calculate_damage(rainflow_results, material_params=None):
             "segment_damage": round(segment_damage, 6)
         })
 
-    total_damage = round(total_damage, 16)
+    total_damage = round(total_damage, 15)  # 保留15位小数，避免浮点误差
 
     # ----------------------
     # 新增：计算1/损伤度（使用次数倍数）

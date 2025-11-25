@@ -93,10 +93,10 @@ def index():
                 # 损伤状态提示（新增使用次数倍数说明）
                 if total_damage >= 1.0:
                     flash(f'⚠️  总损伤度 {total_damage}（≥1.0）：材料已达到疲劳失效阈值！')
-                    flash(f'   1/损伤度（剩余使用倍数）：{usage_multiple}（表示仅能承受当前损伤量的{usage_multiple}倍，已失效）')
+                    flash(f'   剩余使用倍数（1/损伤度）：{usage_multiple}（表示仅能承受当前损伤量的{usage_multiple}倍，已失效）')
                 else:
                     flash(f'✅  总损伤度 {total_damage}（<1.0）：材料当前处于安全状态')
-                    flash(f'   1/损伤度（预估使用倍数）：{usage_multiple}（表示还能承受当前温度循环模式的{usage_multiple}倍）')
+                    flash(f'   剩余使用倍数（1/损伤度）：{usage_multiple}（表示还能承受当前温度循环模式的{usage_multiple}倍）')
 
             except InvalidFileException:
                 flash('错误：无效的Excel文件（可能是文件损坏或版本不兼容）')
@@ -115,6 +115,11 @@ def index():
 def about():
     return render_template('about.html', title='关于本系统')
 
+# 关于页面（不变）
+@app.route('/predict_temperature')
+def predict_temperature():
+    #加载外部链接
+    return redirect('http://localhost/custom/testEV3ph-2-level-DC-AC-inverter.html')
 
 if __name__ == '__main__':
     app.config['DEBUG'] = True
