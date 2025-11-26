@@ -54,7 +54,8 @@
         {% endif %}
     {% endwith %}
 
-    <!-- 文件上传区域（不变） -->
+<!-- 步骤一：上传文件区域（仅在 step=1 时显示） -->
+{% if result.step == 1 and not result.show_preview %}
     <div class="upload-section">
         <h2>上传温度-时间Excel文件</h2>
         <form method="POST" enctype="multipart/form-data">
@@ -65,11 +66,63 @@
                     格式要求：第一列为"时间"（数值/日期格式），第二列为"温度"（数值格式），第一行为表头（如"时间(s)"、"温度(℃)"）
                 </small>
             </div>
-            <button type="submit">上传并计算</button>
+            <button type="submit">上传</button>
         </form>
     </div>
+{% endif %}
 
-    <!-- 结果展示区域（新增使用次数倍数模块） -->
+<!-- 步骤二：数据预览和列选择区域（仅在 step=2 时显示） -->
+{% if result.step == 2 and result.show_preview %}
+<div class="preview-section">
+    <h2>前五列数据预览与列选择</h2>
+    <p>请选择用于分析的时间列和温度列：</p>
+    
+    <form method="POST" action="{{ url_for('select_columns') }}">
+        <input type="hidden" name="file_path" value="{{ result.file_path }}">
+        
+        <div class="column-selection">
+            <label for="time_col">时间列：</label>
+            <select id="time_col" name="time_col" required>
+                {% for col in result.columns %}
+                <option value="{{ col }}"{% if loop.index0 == 0 %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="column-selection">
+            <label for="temp_col">温度列：</label>
+            <select id="temp_col" name="temp_col" required>
+                {% for col in result.columns %}
+                <option value="{{ col }}"{% if loop.index0 == 1 %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <table class="preview-table">
+            <thead>
+                <tr>
+                    {% for col in result.columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in result.preview_data %}
+                <tr>
+                    {% for val in row %}
+                    <td>{{ val }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <button type="submit">确认分析</button>
+    </form>
+</div>
+{% endif %}
+
+    <!-- 步骤三：结果展示区域 -->
     {% if result.has_result %}
         <div class="result-section">
             <h2>计算结果</h2>

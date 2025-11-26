@@ -273,7 +273,26 @@ def calculate_damage(rainflow_results, material_params=None):
 
     return total_damage, damage_details, usage_multiple
 
-# 温度-时间数据解析（不变）
+# 温度-时间数据解析（选择列）
+def parse_selected_columns(sheet, time_idx, temp_idx):
+    """解析用户选择的时间列和温度列"""
+    time_data = []
+    temp_data = []
+    for row in sheet.iter_rows(min_row=2, values_only=True):  # 从第二行开始读取数据
+        try:
+            time_val = float(row[time_idx]) if row[time_idx] is not None else None
+            temp_val = float(row[temp_idx]) if row[temp_idx] is not None else None
+            if time_val and temp_val:
+                time_data.append(time_val)
+                temp_data.append(temp_val)
+        except (ValueError, TypeError):
+            continue  # 跳过无效数据
+    
+    # 按时间排序
+    combined = sorted(zip(time_data, temp_data), key=lambda x: x[0])
+    return [x[0] for x in combined], [x[1] for x in combined]
+
+# 温度-时间数据解析（固定列）
 def parse_temperature_data(sheet):
     time_data = []
     temp_data = []
@@ -318,6 +337,53 @@ def parse_temperature_data(sheet):
 
     return sorted_time, sorted_temp
 
+#读本地文件
+def read_temperature_file_v1(file_path):
+    """
+    根据文件后缀自动选择读取方式，解析温度-时间数据
+    输入：file_path（本地文件路径）
+    """
+    # 步骤1：获取文件后缀，判断文件类型
+    print(file_path)
+    file_ext = file_path.rsplit('.', 1)[1].lower()  # 提取后缀（小写）
+    time_data = []
+    temp_data = []
+
+    if file_ext == 'csv':
+        # 情况2：CSV文件 → 读取CSV数据，写入临时Excel，返回临时Sheet
+        try:
+            # 1. 用pandas读取CSV（处理编码、空行）
+            df = pd.read_csv(
+                file_path,
+                encoding_errors='ignore',  # 忽略编码异常
+                skip_blank_lines=True  # 跳过空行
+            )
+            print(f"成功读取CSV文件：{os.path.basename(file_path)}，数据行数：{len(df)}")
+
+            # 2. 创建临时Excel工作簿（in_memory=True：内存中创建，无物理文件残留）
+            wb_temp = openpyxl.Workbook()
+            sheet_temp = wb_temp.active  # 临时Sheet（默认名称Sheet）
+            sheet_temp.title = "CSV_Data"  # 重命名临时Sheet，便于识别
+            # 3. 将CSV数据写入临时Sheet（保留表头，按行写入）
+            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), 1):
+                # r_idx：Excel行号（从1开始）；row：CSV的一行数据
+                for c_idx, value in enumerate(row, 1):
+                    # c_idx：Excel列号（从1开始）；value：单元格值
+                    sheet_temp.cell(row=r_idx, column=c_idx, value=value)
+
+            print(f"CSV数据已写入临时Sheet：{sheet_temp.title}，表头行：{list(df.columns)}")
+            sheet = sheet_temp
+        except Exception as e:
+            raise RuntimeError(f"CSV文件转换为Sheet失败：{str(e)}")
+    elif file_ext == 'xlsx':
+        wb = openpyxl.load_workbook(file_path, data_only=True)
+        sheet = wb.active
+    else:
+        print('Unknown File Type')
+        sheet = []
+    return sheet
+
+#读网页文件
 def read_temperature_file(file,filename):
     """
     根据文件后缀自动选择读取方式，解析温度-时间数据
