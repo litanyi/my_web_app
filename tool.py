@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from collections import defaultdict
-
+import csv
 from flask import Flask, render_template, request, redirect, url_for, flash
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 plt.rcParams["font.family"] = ["SimHei"]  # 配置中文字体
 
 # 雨流计数法
-def rainflow_counting(temperature_data, plot_flag=False):
+def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
     """
     基于三点法思路的雨流计数法（温度循环）
     核心改进：新增序列拼接优化、二次峰谷提纯
@@ -139,6 +139,23 @@ def rainflow_counting(temperature_data, plot_flag=False):
     # ----------------------
     # 步骤7：结果整理
     # ----------------------
+        # ----------------------
+    # 新增功能：生成CSV文件（幅值和均值）
+    # ----------------------
+    # 切换到脚本所在目录，这样生成的CSV文件会保存在脚本所在目录下
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+    if csv_filename:
+        try:
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['幅值', '均值'])  # 写入表头
+                for amp, mean in zip(Amplitude, Mean):
+                    writer.writerow([round(amp, 2), round(mean, 2)])
+            print(f"雨流计数结果已保存至 {csv_filename}")
+        except Exception as e:
+            print(f"保存CSV文件时出错: {e}")
+
     final_results = {}
     for amp, count in rainflow_results.items():
         total_count = round(count)  # 四舍五入为整数（0.5→1，1.5→2，确保次数合理）
@@ -182,9 +199,12 @@ def rainflow_counting(temperature_data, plot_flag=False):
     # 新增：在控制台打印并可视化「幅值 -> 次数」（使用 Figure 2）
     if plot_flag:
         # 控制台输出（按幅值排序）
+        """
         print("幅值(℃) -> 循环次数:")
+        
         for amp, cnt in sorted(final_results.items()):
             print(f"{amp} ℃ : {cnt} 次")
+        """
 
         # 绘制柱状图显示幅值对应次数并在柱上标注次数（Figure 2）
         amps = sorted(final_results.keys())

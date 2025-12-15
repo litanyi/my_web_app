@@ -60,13 +60,14 @@ def read_temperature_file_v1(file_path):
 if 1:
     # 步骤1：选择本地Excel文件（已移除 GUI 文件选择，直接使用测试路径或替换为你的路径）
     #file_path = 'test/2rol_TG600S3-1-City-65.csv'
-    file_path = 'C:/webframeworks/version_1/models/custom/Temperature.csv'
+    #file_path = 'C:/webframeworks/version_1/models/custom/Temperature.csv'
+    file_path = 'D:\\my_project\my_flask_app\\test\\20250720_P3_160℃_2col.xlsx'
     # 若需要从命令行或其他方式获取路径，请在此处替换 file_path
 
     # 步骤2：读取并解析Excel文件
     try:
         # 加载本地Excel文件（替换原网页的request.files）
-        sheet = read_temperature_file_v1(file_path)
+        sheet = read_temperature_file_PC(file_path)
         print(f"成功读取文件：{os.path.basename(file_path)}（工作表：{getattr(sheet, 'title', 'N/A')}）")
 
         # 解析温度-时间数据
@@ -75,11 +76,11 @@ if 1:
         print(f"成功解析 {len(sorted_temp)} 个有效温度-时间数据点")
 
         # 步骤3：雨流计数
-        rainflow_results = rainflow_counting(sorted_temp,plot_flag=True)
+        rainflow_results = rainflow_counting(sorted_temp,plot_flag=True,csv_filename='rainflowcount.csv')
         # 损伤度计算（新增接收usage_multiple）
         total_damage, damage_details, usage_multiple = calculate_damage(rainflow_results)
         usage_multiple = int(usage_multiple)
-        print(rainflow_results)
+        #print(rainflow_results)
         # 损伤状态提示（新增使用次数倍数说明）
         if total_damage >= 1.0:
             print(f'总损伤度 {total_damage}（≥1.0）：材料已达到疲劳失效阈值！')
