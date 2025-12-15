@@ -5,6 +5,7 @@ from collections import defaultdict
 from flask import Flask, render_template, request, redirect, url_for, flash
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
+from openpyxl import Workbook, load_workbook
 import os
 # 用于图形化文件选择框（PC本地选择）
 import tkinter as tk
@@ -53,7 +54,6 @@ def rainflow_counting(temperature_data, plot_flag=False):
     # 补充最后一个点（确保序列完整）
     if turning_points[-1] != temp_data[-1]:
         turning_points.append(temp_data[-1])
-
 
     # 校验第一次提纯后的序列长度（至少2个点才继续，否则无循环）
     if len(turning_points) < 2:
@@ -338,7 +338,7 @@ def parse_temperature_data(sheet):
     return sorted_time, sorted_temp
 
 #读本地文件
-def read_temperature_file_v1(file_path):
+def read_temperature_file_PC(file_path):
     """
     根据文件后缀自动选择读取方式，解析温度-时间数据
     输入：file_path（本地文件路径）
@@ -378,6 +378,43 @@ def read_temperature_file_v1(file_path):
     elif file_ext == 'xlsx':
         wb = openpyxl.load_workbook(file_path, data_only=True)
         sheet = wb.active
+    # -------------------------- TXT处理分支 --------------------------
+    elif file_ext == 'txt':
+        try:
+            # 读取TXT：自动识别分隔符（空格/制表符/逗号），兼容多编码
+            # 核心修正：移除errors参数，改用open()处理编码错误
+            # 先通过open()读取文件（处理编码错误），再传给pd.read_csv
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                # 读取所有行并过滤空行（替代skip_blank_lines）
+                lines = [line.strip() for line in f if line.strip()]
+            
+            # 用StringIO模拟文件对象，传给pd.read_csv解析
+            from io import StringIO
+            df = pd.read_csv(
+                StringIO('\n'.join(lines)),  # 将过滤后的行转为内存文件
+                sep=r'\s+|,|;',             # 分隔符：空格/制表符/逗号/分号
+                engine='python',            # 启用python引擎支持正则分隔符
+                header=None,                # TXT默认无表头
+                dtype=str,
+                on_bad_lines='skip'         # 跳过解析失败的行
+            )
+            # 可选：如果TXT有固定表头，可手动设置列名
+            # df.columns = ['时间', '温度', '备注']  # 根据实际场景调整
+            print(f"成功读取TXT文件：{os.path.basename(file_path)}，数据行数：{len(df)}，列数：{len(df.columns)}")
+            # 创建内存临时Excel工作簿
+            wb_temp = Workbook()
+            sheet_temp = wb_temp.active
+            sheet_temp.title = "TXT_Data"
+
+            # 将DataFrame写入临时Sheet（无表头则index=False, header=False）
+            header_mode = False if df.columns.tolist() == [0,1,2,...][:len(df.columns)] else True
+            for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=header_mode), 1):
+                for c_idx, value in enumerate(row, 1):
+                    sheet_temp.cell(row=r_idx, column=c_idx, value=value)
+            sheet = sheet_temp
+
+        except Exception as e:
+            raise RuntimeError(f"TXT文件处理失败：{str(e)}")
     else:
         print('Unknown File Type')
         sheet = []

@@ -10,7 +10,7 @@ from tool import *
 # Flask应用初始化（不变）
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['ALLOWED_EXTENSIONS'] = {'xlsx', 'csv'}
+app.config['ALLOWED_EXTENSIONS'] = {'xlsx', 'csv', 'txt'}
 app.config['SECRET_KEY'] = 'temp_rainflow_damage_key'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 限制文件大小16MB
 app.config['SECRET_KEY'] = 'temp_rainflow_damage_key'
@@ -58,7 +58,7 @@ def index():
             return redirect(request.url)
 
         if not allowed_file(file.filename):
-            flash(f'错误：不支持该文件类型！仅允许上传 .xlsx 或 .csv 格式的Excel文件')
+            flash(f'错误：不支持该文件类型！仅允许上传 .txt / .xlsx / .csv 格式的Excel文件')
             return redirect(request.url)
         
         if file and allowed_file(file.filename):
@@ -69,7 +69,7 @@ def index():
                 print(f"temp_path:{temp_path}")
                 file.save(temp_path)
                 # 读取文件前5行和列名
-                sheet = read_temperature_file_v1(temp_path)
+                sheet = read_temperature_file_PC(temp_path)
                 columns = [cell.value for cell in sheet[1]]  # 假设第一行为表头
                 preview_data = []
                 for row in sheet.iter_rows(min_row=2, max_row=6, values_only=True):  # 前5行数据
@@ -96,7 +96,6 @@ def index():
 
     return render_template('index.html', title='温度循环雨流计数与损伤度计算', result=result_data)
 
-# 新增：处理列选择
 @app.route('/select_columns', methods=['POST'])
 def select_columns():
     # 从会话获取result_data
@@ -118,7 +117,7 @@ def select_columns():
     temp_col = request.form['temp_col']
     
     # 读取选定列数据
-    sheet = read_temperature_file_v1(file_path)
+    sheet = read_temperature_file_PC(file_path)
     columns = [cell.value for cell in sheet[1]]
     time_idx = columns.index(time_col)
     temp_idx = columns.index(temp_col)
@@ -128,8 +127,9 @@ def select_columns():
     temp_data = []
     for row in sheet.iter_rows(min_row=2, values_only=True):
         if row[time_idx] and row[temp_idx]:
-            time_data.append(row[time_idx])
-            temp_data.append(row[temp_idx])
+            # 转换为浮点数并添加到列表，修复txt文件读取的bug
+            time_data.append(float(row[time_idx]))
+            temp_data.append(float(row[temp_idx]))
     
     # 直接使用解析后的time_data和temp_data进行后续处理
     try:
@@ -139,7 +139,7 @@ def select_columns():
         temp_min = round(min(temp_data), 2)
         temp_max = round(max(temp_data), 2)
         result_data["time_range"] = f"{time_min} ~ {time_max}"
-        result_data["temp_range"] = f"{temp_min} ~ {temp_max} ℃"
+        result_data["temp_range"] = f"{temp_min} ~ {temp_max}"
 
         # 雨流计数
         rainflow_results = rainflow_counting(temp_data,plot_flag=False)
