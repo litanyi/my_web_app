@@ -15,7 +15,59 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from io import StringIO
 import matplotlib.pyplot as plt
 plt.rcParams["font.family"] = ["SimHei"]  # 配置中文字体
+#提纯峰谷点
+def turning_points_extraction(temperature_data):
+    # 转换为numpy数组（便于后续计算，兼容原列表输入）
+    temp_data = np.array(temperature_data, dtype=float)
+    # 初始化极值点列表（默认保留首尾点）
+    turning_points = [temp_data[0]]
+    m1 = len(temp_data)
 
+    # Mark intermediate points using the MATLAB approach
+    Load1 = temp_data.copy()
+    Load2 = temp_data.copy()
+
+    #remove the same value points
+    # remove consecutive equal points (keep first of a run, remove subsequent equal neighbors)
+    if m1 > 1:
+        B = Load1.copy()
+        for i in range(1, m1):
+            if B[i] == B[i-1]:
+                B[i] = np.nan
+        B = B[~np.isnan(B)]
+        Load1 = B.copy()
+        Load2 = B.copy()
+        m1 = len(Load1)
+
+    # Apply peak-valley purification
+    for i in range(1, m1-1):  # Adjusted for 0-based indexing
+        if Load2[i-1] < Load2[i] and Load2[i] < Load2[i+1]:
+            Load1[i] = np.nan
+        elif Load2[i-1] > Load2[i] and Load2[i] > Load2[i+1]:
+            Load1[i] = np.nan
+
+    # Remove NaN values to keep only peaks and valleys
+    Load1 = Load1[~np.isnan(Load1)]
+
+    # Convert back to list for compatibility with rest of code
+    turning_points = Load1.tolist()
+        # Ensure last point is included if not already present
+    if turning_points and turning_points[-1] != temp_data[-1]:
+        turning_points.append(temp_data[-1])
+
+    return turning_points
+
+def save_to_mat(Load1,output_file): 
+    try:
+        mat_data = {'Load1': Load1}
+        mat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), output_file+'.mat')
+        sio.savemat(mat_path, mat_data)
+        print(f"Saved MATLAB .mat: {mat_path}")
+    except Exception:
+        txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), output_file+'.txt')
+        np.savetxt(txt_path, Load1, fmt='%.6f')
+        print(f"scipy not available or save failed; saved ASCII: {txt_path}")
+    return 0
 # 雨流计数法
 def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
     """
@@ -30,72 +82,38 @@ def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
     n = len(temperature_data)
     if n < 3:
         return {}  # 至少3个数据点才能识别循环
-    # 转换为numpy数组（便于后续计算，兼容原列表输入）
-    temp_data = np.array(temperature_data, dtype=float)
-
+    save_to_mat(temperature_data,'raw_points')
     # ----------------------
     # 步骤2：第一次峰谷提纯（对应三点法步骤一）
     # 目的：移除非极值点，保留纯峰谷交替序列
     # ----------------------
-    # 初始化极值点列表（默认保留首尾点）
-    turning_points = [temp_data[0]]
-    # 遍历中间点，判断是否为峰/谷
-    for i in range(1, n - 1):
-        prev_val = temp_data[i - 1]
-        curr_val = temp_data[i]
-        next_val = temp_data[i + 1]
-
-        # 峰点：当前值 > 前后值；谷点：当前值 < 前后值（严格不等，避免平缓段）
-        is_peak = (curr_val > prev_val) and (curr_val > next_val)
-        is_valley = (curr_val < prev_val) and (curr_val < next_val)
-
-        if is_peak or is_valley:
-            turning_points.append(curr_val)
-    # 补充最后一个点（确保序列完整）
-    if turning_points[-1] != temp_data[-1]:
-        turning_points.append(temp_data[-1])
-
-    # 校验第一次提纯后的序列长度（至少2个点才继续，否则无循环）
-    if len(turning_points) < 2:
-        return {}
+    turning_points = turning_points_extraction(temperature_data)
+    save_to_mat(turning_points,'turning_points')
 
     # ----------------------
     # 步骤3：序列拼接优化（对应MATLAB三点法步骤二）
     # 目的：从最值（绝对值最大的峰/谷）拆分拼接，确保首尾均为极值
     # ----------------------
     # 找到绝对值最大的极值点（优先用最大绝对值，而非单纯最大值，更符合MATLAB思路）
-    abs_turning = np.abs(turning_points)
-    max_abs_idx = np.argmax(abs_turning)  # 绝对值最大点的索引
+    #abs_turning = np.abs(turning_points)
+    max_abs_idx = np.argmax(turning_points)  # 最大点的索引
+    mi = np.min(turning_points)
+    if max_abs_idx==1:
+        mi=np.min(turning_points)
+    else:
+        mi=turning_points[max_abs_idx-1]
     # 拆分序列：从最值点拆分为前后两段，再拼接（前半段+后半段）
     B1 = turning_points[max_abs_idx:]  # 最值点到序列末尾
     B2 = turning_points[:max_abs_idx + 1]  # 序列开头到最值点（包含最值点）
     optimized_points = B1 + B2  # 新序列：从最值开始，到最值结束
-
+    save_to_mat(optimized_points,'optimized_points')
     # ----------------------
     # 步骤4：第二次峰谷提纯（对应MATLAB三点法步骤三）
     # 目的：消除拼接处可能产生的非极值点，确保序列纯峰谷交替
     # ----------------------
-    final_turning = [optimized_points[0]]  # 初始化最终极值点列表
-    m = len(optimized_points)
-    # 遍历拼接后的中间点，二次校验峰谷
-    for i in range(1, m - 1):
-        prev_val = optimized_points[i - 1]
-        curr_val = optimized_points[i]
-        next_val = optimized_points[i + 1]
-
-        is_peak = (curr_val > prev_val) and (curr_val > next_val)
-        is_valley = (curr_val < prev_val) and (curr_val < next_val)
-
-        if is_peak or is_valley:
-            final_turning.append(curr_val)
-    # 补充最后一个点
-    if final_turning[-1] != optimized_points[-1]:
-        final_turning.append(optimized_points[-1])
-
-    # 最终极值点序列长度校验（至少3个点才进行计数，否则无完整循环）
-    if len(final_turning) < 3:
-        return {}
-
+    final_turning = turning_points_extraction(optimized_points)
+    # 将当前的final_turning保存为 MATLAB 可读取的 .mat 文件（若无 scipy 则降级为 ASCII .txt）
+    save_to_mat(final_turning,'final_turning')
     # ----------------------
     # 步骤5：雨流计数核心逻辑（循环识别规则）
     # ----------------------
@@ -107,7 +125,11 @@ def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
     while len(Load1) >= 1:
         n1 = len(Load1)
         # 若剩余数据1个或2个，无法形成循环，退出计数
-        if n1 == 1 or n1 == 2:
+        if n1 == 1:
+            break
+        if  n1 == 2 and Load1[0]==Load1[1]:
+            Amplitude.append(Load1(0)-mi)  # 存入幅值（取标量避免维度问题）
+            Mean.append((Load1(0)+mi)/2)       # 存入均值
             break
         # 遍历查找可计数的循环
         for j in range(n1 - 2):  # Python索引从0开始，对应MATLAB j=1:n1-2
@@ -115,7 +137,7 @@ def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
             s1 = abs(Load1[j+1] - Load1[j])
             s2 = abs(Load1[j+1] - Load1[j+2])
             # 计算均值（对应MATLAB e3）
-            e3 = (Load1[j+1] + Load1[j+2]) / 2
+            e3 = (Load1[j] + Load1[j+1]) / 2
             # 若s1 <= s2，满足计数条件
             if s1 <= s2:
                 rainflow_results[s1[0]] += 1  # 循环计数
@@ -151,7 +173,7 @@ def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
                 writer = csv.writer(csvfile)
                 writer.writerow(['幅值', '均值'])  # 写入表头
                 for amp, mean in zip(Amplitude, Mean):
-                    writer.writerow([round(amp, 2), round(mean, 2)])
+                    writer.writerow([round(amp, 6), round(mean, 6)])
             print(f"雨流计数结果已保存至 {csv_filename}")
         except Exception as e:
             print(f"保存CSV文件时出错: {e}")
@@ -172,6 +194,7 @@ def rainflow_counting(temperature_data, plot_flag=False, csv_filename=None):
         axes = fig1.subplots(2, 2)
         ax0, ax1, ax2, ax3 = axes.flatten()
 
+        temp_data = np.array(temperature_data, dtype=float)
         ax0.plot(temp_data, '-o', markersize=4)
         ax0.set_title("原始温度序列")
         ax0.set_xlabel("索引")
@@ -302,8 +325,9 @@ def parse_selected_columns(sheet, time_idx, temp_idx):
         try:
             time_val = float(row[time_idx]) if row[time_idx] is not None else None
             temp_val = float(row[temp_idx]) if row[temp_idx] is not None else None
-            if time_val and temp_val:
+            if time_val:
                 time_data.append(time_val)
+            if temp_val:
                 temp_data.append(temp_val)
         except (ValueError, TypeError):
             continue  # 跳过无效数据
@@ -319,15 +343,10 @@ def parse_temperature_data(sheet):
 
     for row in sheet.iter_rows(min_row=2, min_col=1, max_col=2, values_only=True):
         time_val, temp_val = row
-        if time_val is None or temp_val is None:
-            continue
-
         # 时间格式处理
         try:
             if isinstance(time_val, (int, float)):
                 time_data.append(float(time_val))
-            else:
-                time_data.append(float(time_val.toordinal()))
         except (ValueError, TypeError):
             flash(f"忽略无效时间数据: {time_val}（第{len(time_data)+2}行）")
             continue
@@ -340,16 +359,8 @@ def parse_temperature_data(sheet):
             time_data.pop()
             continue
 
-    # 数据长度对齐与排序
-    if len(time_data) != len(temp_data):
-        flash("时间与温度数据长度不匹配，已自动修正")
-        min_len = min(len(time_data), len(temp_data))
-        time_data = time_data[:min_len]
-        temp_data = temp_data[:min_len]
-
-    sorted_indices = np.argsort(time_data)
-    sorted_time = [time_data[i] for i in sorted_indices]
-    sorted_temp = [temp_data[i] for i in sorted_indices]
+    sorted_time = time_data
+    sorted_temp = temp_data
 
     # 数据量校验
     if len(sorted_temp) < 3:

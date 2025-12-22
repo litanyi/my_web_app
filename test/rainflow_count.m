@@ -6,7 +6,11 @@ fprintf('三点法\n')
 
 tic
 
-Load=xlsread('C:\webframeworks\version_1\models\custom\Temperature.csv'); Load = Load(:,2);%%在此修改加载的文件名，数据格式一直才可正确运算%%
+Load=xlsread('Temperature.xlsx'); 
+Load = Load(:,2);%%在此修改加载的文件名，数据格式一直才可正确运算%%
+
+% Load=xlsread('C:\webframeworks\version_1\models\custom\Temperature.csv'); 
+% Load = Load(:,2);%%在此修改加载的文件名，数据格式一直才可正确运算%%
 
 %Load=randi([-300,300],10000,1); %取样范围为(-300,300)，取样点 10000 个。
 %Load = [10,20,10,20,10,20]';

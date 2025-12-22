@@ -126,9 +126,10 @@ def select_columns():
     time_data = []
     temp_data = []
     for row in sheet.iter_rows(min_row=2, values_only=True):
-        if row[time_idx] and row[temp_idx]:
+        if row[time_idx]:
             # 转换为浮点数并添加到列表，修复txt文件读取的bug
             time_data.append(float(row[time_idx]))
+        if row[temp_idx]:
             temp_data.append(float(row[temp_idx]))
     
     # 直接使用解析后的time_data和temp_data进行后续处理
@@ -142,7 +143,7 @@ def select_columns():
         result_data["temp_range"] = f"{temp_min} ~ {temp_max}"
 
         # 雨流计数
-        rainflow_results = rainflow_counting(temp_data,plot_flag=False)
+        rainflow_results = rainflow_counting(temp_data,plot_flag=True)
         sorted_rainflow = sorted(rainflow_results.items(), key=lambda x: x[0])
         result_data["rainflow"] = sorted_rainflow
         flash(f'雨流计数完成：检测到 {len(sorted_rainflow)} 种温度循环幅值')

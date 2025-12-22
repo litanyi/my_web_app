@@ -56,12 +56,12 @@ def read_temperature_file_v1(file_path):
         sheet = []
     return sheet
 
-
 if 1:
     # 步骤1：选择本地Excel文件（已移除 GUI 文件选择，直接使用测试路径或替换为你的路径）
     #file_path = 'test/2rol_TG600S3-1-City-65.csv'
     #file_path = 'C:/webframeworks/version_1/models/custom/Temperature.csv'
     file_path = 'D:\\my_project\my_flask_app\\test\\20250720_P3_160℃_2col.xlsx'
+    #file_path = 'D:\\my_project\my_flask_app\\test\\Temperature.xlsx'
     # 若需要从命令行或其他方式获取路径，请在此处替换 file_path
 
     # 步骤2：读取并解析Excel文件
@@ -92,5 +92,3 @@ if 1:
         print("错误: 无效的Excel文件（可能是文件损坏或版本不兼容）")
     except ValueError as ve:
         print(f"错误: 数据处理错误：{str(ve)}")
-    except Exception as e:
-        print(f"系统错误：{str(e)}（请检查文件格式是否正确）")

@@ -1,7 +1,8 @@
-[numj]=xlsread('20250720_P3_160℃_2col.xlsx');%读取igbt.xlsx数据
+[numj]=xlsread('../test/20250720_P3_160℃_2col.xlsx');%读取igbt.xlsx数据
 Ti=numj(:,2);Ic=numj(1,3);
 B=Ti;A=B;
 q=length(A);
+raw_points = B;
 %%三点循环计数法；部分参考SAE ASTM标准
 %% 步骤一%%
 %对载荷时间历程进行处理使它只包含峰平谷谷交替出现
@@ -24,6 +25,7 @@ for i=2:1:m-1
     end
 end
 B(isnan(B))=[];
+turning_points = B;
 %% 步骤二%%
 %对载荷时间历程再造，使从最大（小）值拆开，前后拼接，使从最值开始最值结束
 [laa,ba]=max(B);
@@ -39,6 +41,7 @@ if B1(end)==B2(1)
     B1(end)=NaN;
 end
 B=[B1;B2];
+optimized_points = B;
 %% 步骤三 %%
 %再只留波峰波谷，防止拼接处出现不合理的数据
 A=B;m=length(B);
@@ -50,6 +53,7 @@ for i=2:1:m-1
     end
 end
 B(isnan(B))=[];n=length(B);
+final_points = B;
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% B为改造后载荷时间历程 n为B中波峰波谷的个数
 %% 步骤四 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %雨流计数记因素 1幅值F 2均值J 开启无脑循环模式
