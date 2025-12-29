@@ -121,11 +121,16 @@ def select_columns():
     columns = [cell.value for cell in sheet[1]]
     time_idx = columns.index(time_col)
     temp_idx = columns.index(temp_col)
+
+    local_min_row = 2  # 默认数据从第2行开始
+    if file_path.rsplit('.', 1)[1].lower() == 'txt':
+        local_min_row = 1  # txt文件第一列为索引列，需调整索引
+        print("检测到TXT文件，调整数据起始行至第1行")
     
     # 解析选定列的数据
     time_data = []
     temp_data = []
-    for row in sheet.iter_rows(min_row=2, values_only=True):
+    for row in sheet.iter_rows(min_row=local_min_row, values_only=True):
         if row[time_idx]:
             # 转换为浮点数并添加到列表，修复txt文件读取的bug
             time_data.append(float(row[time_idx]))
